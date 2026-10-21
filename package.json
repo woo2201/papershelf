@@ -1,0 +1,17 @@
+{
+  "name": "papershelf",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "test": "node tests/database.cjs && node tests/browser.cjs",
+    "build:sdk": "esbuild sdk-entry.js --bundle --format=iife --global-name=PapershelfSupabase --minify --outfile=assets/js/supabase.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.118.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.11",
+    "esbuild": "0.28.2",
+    "playwright": "1.64.1"
+  }
+}

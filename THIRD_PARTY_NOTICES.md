@@ -1,6 +1,4 @@
-# 외부 코드 안내
-
-원본에 포함된 외부 코드의 저작권·라이선스 주석은 해당 JavaScript에 유지했습니다.
+# Third Party Notices
 
 - marked 12.0.2 — MIT — https://github.com/markedjs/marked
 - DOMPurify 3.1.6 — Apache-2.0 / MPL-2.0 — https://github.com/cure53/DOMPurify

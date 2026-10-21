@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Papershelf</title><meta name="description" content="글과 링크, 생각을 토픽별로 정리하는 개인 아카이브">
+<link rel="stylesheet" href="./assets/css/styles.css">
+</head>
+<body>
+<canvas id="fjord-background" aria-hidden="true"></canvas>
+<nav aria-label="주 메뉴"><span class="small mark" aria-hidden="true">◩</span><button class="small active" data-view="all">[A] ALL</button><button class="small" data-view="note">[N] NOTES</button><button class="small" data-view="article">[R] ARTICLES</button><button class="small" id="export">[↓] BACKUP</button><button class="small" id="import">[↑] IMPORT</button><button class="small nav-end" id="add">[+] NEW ENTRY</button></nav>
+<header class="hero"><h1><span class="archive-title"><span class="sr-only">Papershelf</span><span class="scramble" aria-hidden="true">Papershelf</span><span class="title-cursor" aria-hidden="true">_</span></span><sup id="total"></sup></h1></header>
+<main class="layout"><aside aria-label="토픽 필터"><div class="side-head"><span class="label">/ FILTERS</span><button class="reset" id="edit-topics">수정</button></div><p class="topic-head">Topic</p><div class="topics" id="topics"></div></aside><section aria-label="기록 목록"><div class="list-tools"><input class="search" id="search" type="search" aria-label="기록 검색" placeholder="제목, 내용, 토픽 검색 ↵"></div><div class="table-head label"><span class="date-label">/ DATE</span><span>/ NAME <span id="results"></span></span><button id="sort" aria-label="정렬 변경">최신순 ↓</button></div><div id="entries"></div></section></main>
+
+<dialog id="editor" aria-labelledby="form-title"><form id="form"><div class="note-heading"><h2 id="form-title" class="sr-only">새로운 기록</h2><span class="grip" aria-hidden="true"></span></div><div class="fields"><div class="note-meta"><label class="meta-date"><span class="sr-only">날짜</span><input name="date" type="date" required></label><fieldset class="kind-toggle"><legend class="sr-only">종류</legend><div class="kind-options"><label><input type="radio" name="kind" value="note" checked><span>Note</span></label><label><input type="radio" name="kind" value="article"><span>Article</span></label></div></fieldset></div><label class="note-title"><span class="sr-only">제목</span><input name="title" maxlength="180" required placeholder="제목"></label><fieldset class="note-topics"><legend class="sr-only">토픽</legend><div id="entry-topics" class="entry-topics"></div></fieldset><div class="write-tabs" role="tablist" aria-label="본문 보기"><button type="button" role="tab" aria-selected="true" data-tab="write">쓰기</button><button type="button" role="tab" aria-selected="false" data-tab="preview">미리보기</button><span class="md-hint">Markdown · ```코드``` · **굵게** · ## 제목</span></div><label class="note-body"><span class="sr-only">내용</span><textarea name="body" maxlength="200000" placeholder="여기서부터 기록하세요…" spellcheck="false"></textarea></label><div class="prose md-preview" id="md-preview" hidden></div><div class="note-photos"><button type="button" class="photo-add" id="photo-add">+ 사진 <span>커서 위치에 들어갑니다 · 끌어다 놓기 · 붙여넣기 · 5MB 미만</span></button><input type="file" id="photo-file" accept="image/*" multiple hidden></div></div><div class="drop-hint" aria-hidden="true">사진을 여기에 놓으세요</div><div class="form-actions"><button class="small" type="button" id="cancel">취소</button><button class="small active" type="submit">저장</button></div></form></dialog>
+<input type="file" id="file" accept="application/json,.json" hidden><div class="status" role="status" id="status"></div>
+<script src="./assets/js/vendor.js"></script>
+<script src="./assets/js/app.js"></script>
+<script src="./assets/js/title-animation.js"></script>
+</body>
+</html>

@@ -41,51 +41,31 @@ async function acceptSession(session){
     updateAccount();await load();
   }catch(e){if(epoch===bs.epoch){$('#load-error').hidden=false;$('#load-error').textContent=`글을 불러오지 못했습니다. ${e.message}`;$('#account-message').textContent=e.message}}
 }
-function updateAccount(){renderLoginState();document.body.classList.toggle('blog-admin',bs.admin);$('#account').textContent=bs.user?'ACCOUNT':'LOGIN';$('#login-form').hidden=!!bs.user;$('#account-actions').hidden=!bs.user;$('#import-browser').hidden=!bs.admin;$('#account-email').textContent=bs.user?.email||'';if(bs.user&&!bs.admin)$('#account-message').textContent='이 계정에는 블로그 작성 권한이 없습니다.';else $('#account-message').textContent='';render()}
+function updateAccount(){document.body.classList.toggle('blog-admin',bs.admin);$('#account').textContent=bs.user?'ACCOUNT':'LOGIN';$('#login-panel').hidden=!!bs.user;$('#account-actions').hidden=!bs.user;$('#import-browser').hidden=!bs.admin;$('#account-email').textContent=bs.user?.email||'';if(bs.user&&!bs.admin)$('#account-message').textContent='이 계정에는 블로그 작성 권한이 없습니다.';else $('#account-message').textContent='';render()}
 $('#account').onclick=()=>$('#account-dialog').showModal();$('#close-account').onclick=()=>$('#account-dialog').close();
-let loginSending=false,loginVerifying=false,codeVisible=false,codeSentTo='',resendAt=0;
-const loginEmail=()=>$('#login-email').value.trim();
-function renderLoginState(){
-  const loggedIn=!!bs.user,busy=loginSending||loginVerifying,remaining=Math.max(0,Math.ceil((resendAt-Date.now())/1000));
-  $('#verify-form').hidden=loggedIn||!codeVisible;
-  $('#login-email').disabled=busy;
-  $('#show-code').disabled=busy;
-  $('#send-code').disabled=busy||remaining>0;
-  $('#send-code').textContent=loginSending?'보내는 중…':remaining?`재전송 (${remaining}초)`:codeSentTo?'인증코드 다시 받기':'인증코드 받기';
-  $('#verify-code').disabled=busy;
-  $('#verify-code').textContent=loginVerifying?'인증 중…':'인증하고 로그인';
-  if(loggedIn){$('#login-code').value='';codeVisible=false;codeSentTo='';resendAt=0}
-}
-setInterval(renderLoginState,1000);
-$('#login-email').addEventListener('input',()=>{$('#login-code').value='';$('#account-message').textContent='';codeSentTo='';resendAt=0;renderLoginState()});
-$('#show-code').onclick=()=>{if(!$('#login-email').reportValidity())return;codeVisible=true;renderLoginState();$('#login-code').focus()};
-$('#login-form').onsubmit=async e=>{
-  e.preventDefault();if(loginSending||loginVerifying||Date.now()<resendAt)return;
-  const email=loginEmail();loginSending=true;renderLoginState();
+let oauthStarting=false;
+$('#github-login').onclick=async()=>{
+  if(oauthStarting)return;oauthStarting=true;
+  const button=$('#github-login');button.disabled=true;button.textContent='GitHub로 이동 중…';$('#account-message').textContent='';
   try{
-    const {error}=await client.auth.signInWithOtp({email,options:{shouldCreateUser:true}});if(error)throw error;
-    codeSentTo=email;codeVisible=true;resendAt=Date.now()+60000;
-    $('#account-message').textContent=`${email}로 인증코드를 보냈습니다. 이메일을 다른 기기에서 확인해도 됩니다.`;
-  }catch(error){$('#account-message').textContent=error.status===429?'요청이 너무 많습니다. 잠시 뒤 다시 시도해 주세요.':error.message}
-  finally{loginSending=false;renderLoginState();if(codeVisible&&!bs.user)$('#login-code').focus()}
+    const response=await fetch(`${client.supabaseUrl}/auth/v1/settings`,{headers:{apikey:client.supabaseKey}});
+    if(!response.ok)throw Error('로그인 서비스에 연결하지 못했습니다. 잠시 뒤 다시 시도해 주세요.');
+    const settings=await response.json();
+    if(settings.external?.github!==true)throw Error('GitHub 로그인 연결 설정이 아직 완료되지 않았습니다.');
+    const {data,error}=await client.auth.signInWithOAuth({provider:'github',options:{redirectTo:new URL('./',location.href).href,skipBrowserRedirect:true}});
+    if(error)throw error;if(!data.url)throw Error('GitHub 로그인 주소를 받지 못했습니다.');
+    location.assign(data.url);
+  }catch(error){$('#account-message').textContent=error.message}
+  finally{oauthStarting=false;button.disabled=false;button.textContent='GitHub로 로그인'}
 };
-$('#verify-form').onsubmit=async e=>{
-  e.preventDefault();if(loginSending||loginVerifying)return;
-  if(!$('#login-email').reportValidity())return;
-  const email=loginEmail(),token=$('#login-code').value.trim();
-  if(!/^[0-9]{6,10}$/.test(token)){$('#account-message').textContent='이메일에 표시된 숫자 인증코드를 입력해 주세요.';return}
-  loginVerifying=true;renderLoginState();
-  try{
-    const {data,error}=await client.auth.verifyOtp({email,token,type:'email'});if(error)throw error;
-    if(!data.session)throw Error('로그인 정보를 받지 못했습니다. 새 인증코드를 받아 다시 시도해 주세요.');
-    await acceptSession(data.session);$('#login-code').value='';$('#account-dialog').close();
-  }catch(error){$('#account-message').textContent=error.status===429?'인증 시도가 너무 많습니다. 잠시 뒤 다시 시도해 주세요.':'코드가 올바르지 않거나 만료되었습니다. 이메일과 가장 최근에 받은 코드를 확인해 주세요.'}
-  finally{loginVerifying=false;renderLoginState()}
-};
-$('#account-dialog').addEventListener('close',()=>{$('#login-code').value=''});
 $('#logout').onclick=async()=>{if(bs.busy){$('#account-message').textContent='저장 완료 후 로그아웃해 주세요.';return}const {error}=await client.auth.signOut({scope:'local'});if(error){$('#account-message').textContent=error.message;return}await acceptSession(null);$('#account-dialog').close()};
 client.auth.onAuthStateChange((event,session)=>{if(event!=='TOKEN_REFRESHED')setTimeout(()=>acceptSession(session),0)});
-client.auth.getSession().then(({data,error})=>{if(error)failure(error,'#account-message');else acceptSession(data.session)});
+const authCallbackUrl=new URL(location.href);
+const authCallbackError=authCallbackUrl.searchParams.get('error_description')||new URLSearchParams(authCallbackUrl.hash.slice(1)).get('error_description');
+client.auth.getSession().then(async({data,error})=>{
+  await acceptSession(error?null:data.session);
+  if(error||authCallbackError){$('#account-message').textContent='GitHub 로그인을 완료하지 못했습니다. 다시 시도해 주세요.';$('#account-dialog').showModal();for(const key of ['error','error_code','error_description'])authCallbackUrl.searchParams.delete(key);if(authCallbackUrl.hash.includes('error'))authCallbackUrl.hash='';history.replaceState(null,'',authCallbackUrl)}
+});
 
 async function uploadPhoto(id,blob,check){
   check();if(blob.size>=PHOTO_MAX||!['image/png','image/jpeg','image/webp','image/gif','image/avif'].includes(blob.type))throw Error('사진은 PNG, JPEG, WebP, GIF, AVIF 형식의 5MB 미만 파일이어야 합니다.');

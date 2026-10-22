@@ -2,7 +2,7 @@ const {chromium}=require('playwright');const crypto=require('node:crypto');const
 const A='11111111-1111-4111-8111-111111111111',B='22222222-2222-4222-8222-222222222222';
 const user=id=>({id,email:id===A?'owner@example.com':'visitor@example.com',aud:'authenticated',role:'authenticated',app_metadata:{},user_metadata:{},created_at:new Date().toISOString()});
 const session=id=>({access_token:['eyJhbGciOiJIUzI1NiJ9',Buffer.from(JSON.stringify({sub:id,exp:Math.floor(Date.now()/1000)+3600,role:'authenticated',aud:'authenticated'})).toString('base64url'),'mock'].join('.'),refresh_token:'refresh-'+id,token_type:'bearer',expires_in:3600,expires_at:Math.floor(Date.now()/1000)+3600,user:user(id)});
-const entry=(id,title)=>({id,title,date:'2026-10-21',kind:'note',topics:['Test'],body:'## Markdown\n**본문**',url:'',images:[]});
+const entry=(id,title)=>({id,title,date:'2026-10-21',kind:id==='public'?'article':'note',topics:['Test'],body:'## Markdown\n**본문**',url:'',images:[]});
 const posts=new Map([['public',{id:'public',owner_id:A,entry:entry('public','공개 글'),status:'published',version:1}],['draft',{id:'draft',owner_id:A,entry:entry('draft','비공개 초안'),status:'draft',version:1}]]);
 let settings={owner_id:A,topics:['Test'],version:1},oauthCalls=0,pkceExchanges=0,githubEnabled=false,oauthChallenge='';const photos=new Map();const errors=[];
 const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==','base64');
@@ -33,42 +33,40 @@ async function mock(context,origin){await context.route('https://shpiczkprbylbht
  const origin=`http://127.0.0.1:${server.address().port}`;
  const browser=await chromium.launch({...(fs.existsSync('/usr/bin/chromium')?{executablePath:'/usr/bin/chromium'}:{}),headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
  try{
- const context=await browser.newContext({viewport:{width:1440,height:1000},acceptDownloads:true});await mock(context,origin);
+ const context=await browser.newContext({viewport:{width:1440,height:1000},acceptDownloads:true});await context.addInitScript(()=>{window.print=()=>window.__printed=true});await mock(context,origin);
  async function pageIn(ctx){const p=await ctx.newPage();p.on('pageerror',e=>errors.push(e.message));p.on('dialog',d=>d.accept());await p.goto(origin);await p.waitForFunction(()=>blogState.ready);return p}
  const page=await pageIn(context);
  assert.equal(await page.locator('.entry').count(),1);assert.equal(await page.locator('#add').isVisible(),false);assert.equal(await page.locator('[data-action=edit]').count(),0);
  await page.locator('#account').click();await page.locator('#github-login').click();await page.waitForFunction(()=>document.querySelector('#account-message').textContent.includes('아직 완료되지 않았습니다'));assert.equal(oauthCalls,0);assert.equal(await page.locator('#github-login').isEnabled(),true);
  githubEnabled=true;await page.locator('#github-login').click();await page.waitForFunction(()=>window.blogState?.ready&&window.blogState?.admin);
  assert.equal(oauthCalls,1);assert.equal(pkceExchanges,1);assert.equal(new URL(page.url()).searchParams.get('code'),null);
- assert.equal(await page.locator('.entry').count(),2);assert(await page.locator('#add').isVisible());
+ assert.equal(await page.locator('.entry').count(),2);assert(await page.locator('#add').isVisible());assert.equal(await page.locator('#editor').evaluate(el=>el.tagName),'SECTION');assert.equal(await page.locator('#export,#import,#import-browser,#draft-backup,#reload-post,[name=kind],.md-hint,nav [data-view]').count(),0);
  // New posts default to private; uploaded images survive save and preview.
- await page.locator('#add').click();assert.equal(await page.locator('#publish-entry').isChecked(),false);await page.locator('[name=title]').fill('사진 초안');await page.locator('#photo-file').setInputFiles({name:'photo.png',mimeType:'image/png',buffer:png});await page.locator('#form button[type=submit]').click();await page.waitForFunction(()=>!blogState.busy&&!document.querySelector('#editor').open);
+ await page.locator('#add').click();assert.equal(await page.locator('#add').isVisible(),false);assert.equal(await page.locator('#publish-entry').isChecked(),false);await page.locator('[name=title]').fill('사진 초안');await page.locator('#photo-file').setInputFiles({name:'photo.png',mimeType:'image/png',buffer:png});await page.locator('#form button[type=submit]').click();await page.waitForFunction(()=>!blogState.busy&&document.querySelector('#editor').hidden);
  assert.equal(photos.size,1);assert.equal([...posts.values()].find(p=>p.entry.title==='사진 초안').status,'draft');
  const photoRow=page.locator('.entry').filter({hasText:'사진 초안'});await photoRow.locator('summary').click();await page.waitForFunction(()=>document.querySelector('.prose img')?.src.startsWith('blob:'));
  // Two browser contexts share backend, not browser session state.
  const secondContext=await browser.newContext({storageState:await context.storageState()});await mock(secondContext,origin);const second=await pageIn(secondContext);
  for(const p of [page,second]){const row=p.locator('.entry[data-id=public]');await row.locator('summary').click();await row.locator('[data-action=edit]').click()}
- await page.locator('[name=title]').fill('첫 기기 미저장 초안');await second.locator('[name=title]').fill('두 번째 기기 저장');await second.locator('#form button[type=submit]').click();await second.waitForFunction(()=>!blogState.busy&&!document.querySelector('#editor').open);
+ await page.locator('[name=title]').fill('첫 기기 미저장 초안');await second.locator('[name=title]').fill('두 번째 기기 저장');await second.locator('#form button[type=submit]').click();await second.waitForFunction(()=>!blogState.busy&&document.querySelector('#editor').hidden);
  await page.locator('#form button[type=submit]').click();await page.waitForFunction(()=>document.querySelector('#editor-message').textContent.includes('다른 기기'));
  assert.equal(posts.get('public').entry.title,'두 번째 기기 저장');assert.equal(await page.locator('[name=title]').inputValue(),'첫 기기 미저장 초안');await page.evaluate(()=>blogClient.auth.refreshSession());assert.equal(await page.locator('[name=title]').inputValue(),'첫 기기 미저장 초안');
- const download=page.waitForEvent('download');await page.locator('#draft-backup').click();await download;
- await page.locator('#reload-post').click();await page.waitForFunction(()=>document.querySelector('[name=title]').value==='두 번째 기기 저장');await page.locator('#cancel').click();
- // Import preserves browser originals and stays private; repeated import is idempotent.
- const archive={entries:[entry('old','이전 기록')],topics:['Old']};await page.evaluate(a=>localStorage.setItem('personal-archive-v1',JSON.stringify(a)),archive);
- await page.locator('#account').click();await page.locator('#import-browser').click();await page.waitForFunction(()=>!blogState.busy&&document.querySelector('#account-message').textContent.includes('1개 기록'));const count=posts.size;
- assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('personal-archive-v1')).entries[0].title),'이전 기록');assert.equal([...posts.values()].find(p=>p.entry.title==='이전 기록').status,'draft');
- await page.locator('#import-browser').click();await page.waitForFunction(()=>!blogState.busy&&document.querySelector('#account-message').textContent.includes('0개 기록'));assert.equal(posts.size,count);await page.locator('#close-account').click();
- await page.reload();await page.waitForFunction(()=>blogState.ready&&blogState.admin);
+ await page.locator('#cancel').click();await page.reload();await page.waitForFunction(()=>blogState.ready&&blogState.admin);
+ const fresh=page.locator('.entry[data-id=public]');await fresh.locator('summary').click();await fresh.locator('[data-action=edit]').click();assert.equal(await page.locator('[name=title]').inputValue(),'두 번째 기기 저장');await page.locator('#cancel').click();assert.equal(posts.get('public').entry.kind,'article');
+ // Entry-only exports include private photos; printing contains only the selected post.
+ const exportedRow=page.locator('.entry').filter({hasText:'사진 초안'});await exportedRow.locator('summary').click();
+ const download=page.waitForEvent('download');await exportedRow.locator('[data-action=md]').click();const mdFile=await download;assert.equal(mdFile.suggestedFilename(),'사진 초안.md');const markdown=fs.readFileSync(await mdFile.path(),'utf8');assert(markdown.includes('data:image/png;base64,'));assert(!markdown.includes('(photo:'));
+ await exportedRow.locator('[data-action=pdf]').click();await page.waitForFunction(()=>document.querySelector('#print-frame')?.contentWindow.__printed===true);assert.equal(await page.frameLocator('#print-frame').locator('h1').textContent(),'사진 초안');assert.equal(await page.frameLocator('#print-frame').locator('img').count(),1);assert.equal(await page.frameLocator('#print-frame').locator('body').textContent().then(text=>text.includes('두 번째 기기 저장')),false);
  // Topic editing persists atomically through RPC.
  await page.locator('#edit-topics').click();await page.locator('.topic-name').first().fill('Changed');await page.locator('[data-topic-act=save]').click();await page.waitForFunction(()=>!blogState.busy&&!topicEditing);assert(settings.topics.includes('Changed'));
  fs.mkdirSync('test-results',{recursive:true});await page.screenshot({path:'test-results/admin.png',fullPage:true});
  await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await page.locator('#add').click();await page.screenshot({path:'test-results/editor-mobile.png'});await page.locator('#cancel').click();
- await page.evaluate(async s=>blogClient.auth.setSession(s),session(B));await page.waitForFunction(()=>blogState.ready&&blogState.user.id==='22222222-2222-4222-8222-222222222222');assert.equal(await page.locator('.entry').count(),1);assert.equal(await page.locator('#add').isVisible(),false);assert.equal(await page.evaluate(()=>photoUrls.size),0);
+ await page.evaluate(async s=>blogClient.auth.setSession(s),session(B));await page.waitForFunction(()=>blogState.ready&&blogState.user.id==='22222222-2222-4222-8222-222222222222');assert.equal(await page.locator('.entry').count(),1);assert.equal(await page.locator('#add').isVisible(),false);assert.equal(await page.evaluate(()=>photoUrls.size),0);assert.equal(await page.locator('#print-frame').count(),0);assert.equal(await page.evaluate(()=>blogState.editEntry),null);assert.equal(await page.locator('[name=title]').inputValue(),'');
  await page.locator('#account').click();await page.locator('#logout').click();await page.waitForFunction(()=>blogState.ready&&!blogState.user);assert(!await page.evaluate(()=>localStorage.getItem('papershelf-blog-session')));
  await page.goto(origin+'/?post=public');await page.waitForFunction(()=>blogState.ready);assert(await page.locator('.entry[data-id=public]').evaluate(el=>el.open));assert((await page.title()).includes('두 번째 기기 저장'));
- await page.screenshot({path:'test-results/visitor-mobile.png',fullPage:true});assert.deepEqual(errors,[]);
+ const publicDownload=page.waitForEvent('download');await page.locator('.entry[data-id=public] [data-action=md]').click();assert.equal((await publicDownload).suggestedFilename(),'두 번째 기기 저장.md');await page.screenshot({path:'test-results/visitor-mobile.png',fullPage:true});assert.deepEqual(errors,[]);
  // A rejected OAuth consent returns a useful retry screen without storing an authenticated session.
  const deniedContext=await browser.newContext();await mock(deniedContext,origin);const denied=await deniedContext.newPage();denied.on('pageerror',e=>errors.push(e.message));await denied.goto(origin+'/?error=access_denied&error_description=Denied');await denied.waitForFunction(()=>document.querySelector('#account-dialog').open);assert((await denied.locator('#account-message').textContent()).includes('완료하지 못했습니다'));assert.equal(await denied.evaluate(()=>blogState.user),null);assert.equal(new URL(denied.url()).searchParams.get('error'),null);await deniedContext.close();assert.deepEqual(errors,[]);
- console.log('PASS browser: public/admin separation, GitHub OAuth redirect/PKCE exchange and disabled-provider handling, persistent login/logout, photos, draft default, 2-device conflict, draft backup/reload, original-preserving import, topic editing, permalink, mobile');
+ console.log('PASS browser: public/admin separation, GitHub OAuth redirect/PKCE exchange and disabled-provider handling, persistent login/logout, photos, draft default, 2-device conflict, inline writer, preserved draft on conflict, selected-entry MD/PDF exports, topic editing, permalink, mobile');
  }finally{await browser.close();await new Promise(resolve=>server.close(resolve))}
 })().catch(e=>{console.error(e);process.exit(1)});

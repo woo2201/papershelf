@@ -34,13 +34,14 @@ Supabase가 서버에서 인증한 GitHub의 **고유 숫자 ID**를 비공개 `
 ## 사용 방법
 
 - 방문자: 로그인 없이 발행 글 열람, 토픽 필터, 검색, `?post=글ID` 주소 공유.
-- 관리자: LOGIN → GitHub로 로그인 → GitHub 인증 → New Entry.
+- 관리자: LOGIN → GitHub로 로그인 → 목록 위 `+`로 바로 작성합니다. 작성·수정 화면은 팝업 대신 글 목록 안에서 열립니다.
 - 새 글은 기본적으로 **초안**입니다. `공개 발행`을 선택하고 저장해야 방문자에게 보입니다. 해제하고 저장하면 비공개로 돌아갑니다.
-- 저장 충돌 시 작성 내용은 편집기에 남습니다. `초안 백업` 후 `최신본 다시 열기`로 해결합니다. 자동 덮어쓰기나 자동 병합은 하지 않습니다.
+- 저장 충돌 시 작성 내용은 편집기에 남습니다. 필요한 내용을 복사한 뒤 취소하고 새로고침해 최신 글을 다시 열어 주세요. 자동 덮어쓰기나 자동 병합은 하지 않습니다.
 - 토픽 수정은 관련 글 수정과 하나의 트랜잭션으로 저장됩니다. 하나라도 충돌하면 전체가 취소됩니다.
-- ACCOUNT → `브라우저 기록 가져오기`: **현재 주소**의 localStorage/IndexedDB 기록을 복사합니다. 다른 주소의 브라우저 저장소에는 접근할 수 없으므로 기존 Sites에서 BACKUP 후 새 블로그에서 IMPORT를 사용하세요.
-- 가져온 기록은 모두 초안이며 원본을 삭제하지 않습니다. 같은 내용을 반복 가져오면 중복되지 않습니다. 원본 내용이 달라졌다면 별도 초안으로 복사합니다.
-- BACKUP에는 초안과 사진이 포함됩니다. 백업 파일을 공개 저장소에 올리지 마세요.
+- Note/Article 종류 선택과 전체 Backup/Import UI는 제거했습니다. 기존 글의 종류와 저장 내용은 유지합니다.
+- 각 글을 펼치면 `MD ↓`와 `PDF ↓`를 사용할 수 있습니다. 공개 글은 방문자도 내보낼 수 있고 초안은 관리자만 접근할 수 있습니다.
+- MD는 글 메타데이터와 사진을 포함하는 파일로 저장합니다. 로컬 사진 ID는 data URI로 변환합니다.
+- PDF는 선택한 글만 담은 인쇄창을 엽니다. 대상에서 **PDF로 저장**을 선택하세요. 한글 폰트와 첨부 사진을 포함하고, 다른 글과 편집 UI는 인쇄하지 않습니다.
 
 ## 데이터와 권한
 
@@ -64,7 +65,7 @@ python3 -m http.server 8000
 개발 로그인에는 `http://localhost:8000/`를 Supabase Redirect URLs에 추가해야 합니다. 브라우저 테스트는 OAuth 서버를 모의하므로 실제 GitHub 동의나 계정 로그인을 수행하지 않습니다.
 
 - `tests/database.cjs`: PGlite의 실제 PostgreSQL 엔진에서 SQL을 적용해 RLS, 다른 계정의 쓰기 차단, 초안/사진 비공개, 발행 취소, 버전 충돌과 트랜잭션 롤백을 검증합니다. Auth/Storage 기본 스키마는 테스트용 대체물입니다.
-- `tests/browser.cjs`: Chromium에서 실제 SDK + 모의 Supabase API로 GitHub OAuth 리디렉션과 PKCE 코드 교환, 로그인 유지, 관리자/방문자 화면, 사진, 가져오기, 두 브라우저의 충돌, 모바일과 글 주소를 검증합니다.
+- `tests/browser.cjs`: Chromium에서 실제 SDK + 모의 Supabase API로 GitHub OAuth 리디렉션과 PKCE 코드 교환, 로그인 유지, 관리자/방문자 화면, 사진, 글별 MD/PDF 내보내기, 두 브라우저의 충돌, 모바일과 글 주소를 검증합니다.
 - 새 운영 Supabase DB에서도 익명/다른 계정의 쓰기 차단을 확인했습니다. Security Advisor 경고는 없습니다. 실제 GitHub 동의/로그인은 본인 브라우저에서 확인해야 합니다.
 
 화면은 `index.html`, `assets/css/styles.css` 및 `assets/css/blog.css`, `assets/js/app.js`에 있고, DB/Auth 연동은 `assets/js/blog-client.js`, `assets/js/blog.js`로 분리했습니다. SDK는 2.118.0으로 고정했으며 `npm run build:sdk`로 재생성합니다.

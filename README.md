@@ -17,10 +17,16 @@
 
 다른 프로젝트에 새로 설치하려면 [`supabase/setup.sql`](supabase/setup.sql)을 한 번 실행하고, 관리자 이메일을 비공개 테이블에 등록합니다. 기존 프로젝트에는 같은 스키마를 다시 적용하지 마세요. 최초 마이그레이션은 Supabase에 `papershelf_public_blog` 이름으로 기록되어 있습니다.
 
+## 이메일 인증코드 설정
+
+Supabase Auth → Email Templates에서 **Magic Link**와 **Confirm signup** 두 본문을 [`supabase/email-templates/login-code.html`](supabase/email-templates/login-code.html) 내용으로 저장합니다. 반드시 `{{ .Token }}` 변수가 있어야 이메일에 숫자 코드가 표시됩니다. 프로젝트 설정에서 이메일 인증(Confirm email)은 계속 켜 둡니다.
+
+UI의 코드 입력만으로 이메일 템플릿이 바뀌지는 않습니다. 현재 Supabase 플러그인은 이메일 템플릿 수정 API를 제공하지 않으므로 이 설정은 대시보드에서 수행합니다.
+
 ## 사용 방법
 
 - 방문자: 로그인 없이 발행 글 열람, 토픽 필터, 검색, `?post=글ID` 주소 공유.
-- 관리자: LOGIN → 이메일 링크를 같은 브라우저에서 열기 → New Entry.
+- 관리자: LOGIN → 이메일 입력 → 인증코드 받기 → 받은 코드를 로그인할 기기에 입력 → New Entry. 이메일은 다른 브라우저/기기에서 확인해도 됩니다. 이미 받은 코드는 `이미 받은 코드 입력`으로 입력할 수 있습니다.
 - 새 글은 기본적으로 **초안**입니다. `공개 발행`을 선택하고 저장해야 방문자에게 보입니다. 해제하고 저장하면 비공개로 돌아갑니다.
 - 저장 충돌 시 작성 내용은 편집기에 남습니다. `초안 백업` 후 `최신본 다시 열기`로 해결합니다. 자동 덮어쓰기나 자동 병합은 하지 않습니다.
 - 토픽 수정은 관련 글 수정과 하나의 트랜잭션으로 저장됩니다. 하나라도 충돌하면 전체가 취소됩니다.
@@ -50,7 +56,7 @@ python3 -m http.server 8000
 개발 로그인에는 `http://localhost:8000/`를 Supabase Redirect URLs에 추가해야 합니다. GitHub Actions 테스트는 네트워크를 모의하므로 실제 계정/이메일을 사용하지 않습니다.
 
 - `tests/database.cjs`: PGlite의 실제 PostgreSQL 엔진에서 SQL을 적용해 RLS, 다른 계정의 쓰기 차단, 초안/사진 비공개, 발행 취소, 버전 충돌과 트랜잭션 롤백을 검증합니다. Auth/Storage 기본 스키마는 테스트용 대체물입니다.
-- `tests/browser.cjs`: Chromium에서 실제 SDK + 모의 Supabase API로 로그인 유지, 관리자/방문자 화면, 사진, 가져오기, 두 브라우저의 충돌, 모바일과 글 주소를 검증합니다.
+- `tests/browser.cjs`: Chromium에서 실제 SDK + 모의 Supabase API로 서로 다른 브라우저의 인증코드 요청/검증, 잘못된 코드 재시도, 로그인 유지, 관리자/방문자 화면, 사진, 가져오기, 두 브라우저의 충돌, 모바일과 글 주소를 검증합니다.
 - 새 운영 Supabase DB에서도 익명/다른 계정의 쓰기 차단을 확인했습니다. Security Advisor 경고는 없습니다. 관리자 실제 이메일 발송/인증은 본인이 로그인해 확인해야 합니다.
 
 화면은 `index.html`, `assets/css/styles.css` 및 `assets/css/blog.css`, `assets/js/app.js`에 있고, DB/Auth 연동은 `assets/js/blog-client.js`, `assets/js/blog.js`로 분리했습니다. SDK는 2.118.0으로 고정했으며 `npm run build:sdk`로 재생성합니다.

@@ -4,13 +4,14 @@ const user=id=>({id,email:id===A?'owner@example.com':'visitor@example.com',aud:'
 const session=id=>({access_token:['eyJhbGciOiJIUzI1NiJ9',Buffer.from(JSON.stringify({sub:id,exp:Math.floor(Date.now()/1000)+3600,role:'authenticated',aud:'authenticated'})).toString('base64url'),'mock'].join('.'),refresh_token:'refresh-'+id,token_type:'bearer',expires_in:3600,expires_at:Math.floor(Date.now()/1000)+3600,user:user(id)});
 const entry=(id,title)=>({id,title,date:'2026-10-21',kind:'note',topics:['Test'],body:'## Markdown\n**본문**',url:'',images:[]});
 const posts=new Map([['public',{id:'public',owner_id:A,entry:entry('public','공개 글'),status:'published',version:1}],['draft',{id:'draft',owner_id:A,entry:entry('draft','비공개 초안'),status:'draft',version:1}]]);
-let settings={owner_id:A,topics:['Test'],version:1},otp=0;const photos=new Map();const errors=[];
+let settings={owner_id:A,topics:['Test'],version:1},otp=0,verifications=0,codeUsed=false;const photos=new Map();const errors=[];
 const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==','base64');
 async function mock(context,origin){await context.route('https://shpiczkprbylbhtomynw.supabase.co/**',async route=>{
  const req=route.request(),url=new URL(req.url());let uid;try{uid=JSON.parse(Buffer.from((req.headers().authorization||'').split('.')[1],'base64url')).sub}catch{}
  const json=(data,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify(data)});
  if(req.method()==='OPTIONS')return route.fulfill({status:204,headers:{'access-control-allow-origin':'*','access-control-allow-headers':'*'}});
- if(url.pathname.endsWith('/auth/v1/otp')){otp++;assert.equal(url.searchParams.get('redirect_to'),origin+'/');assert.equal(JSON.parse(req.postData()).create_user,true);return json({})}
+ if(url.pathname.endsWith('/auth/v1/otp')){otp++;codeUsed=false;assert.equal(url.searchParams.get('redirect_to'),null);assert.equal(JSON.parse(req.postData()).create_user,true);return json({})}
+ if(url.pathname.endsWith('/auth/v1/verify')){const body=JSON.parse(req.postData());verifications++;assert.equal(body.email,'owner@example.com');assert.equal(body.type,'email');if(body.token!=='654321'||codeUsed)return json({code:'otp_expired',message:'Token has expired or is invalid'},403);codeUsed=true;return json(session(A))}
  if(url.pathname.endsWith('/auth/v1/user'))return json(user(uid));
  if(url.pathname.endsWith('/auth/v1/token'))return json(session(JSON.parse(req.postData()).refresh_token.slice(8)));
  if(url.pathname.endsWith('/auth/v1/logout'))return route.fulfill({status:204});
@@ -32,12 +33,24 @@ async function mock(context,origin){await context.route('https://shpiczkprbylbht
  const origin=`http://127.0.0.1:${server.address().port}`;
  const browser=await chromium.launch({...(fs.existsSync('/usr/bin/chromium')?{executablePath:'/usr/bin/chromium'}:{}),headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
  try{
- const context=await browser.newContext({viewport:{width:1440,height:1000},acceptDownloads:true});await mock(context,origin);
+ let context=await browser.newContext({viewport:{width:1440,height:1000},acceptDownloads:true});await mock(context,origin);
  async function pageIn(ctx){const p=await ctx.newPage();p.on('pageerror',e=>errors.push(e.message));p.on('dialog',d=>d.accept());await p.goto(origin);await p.waitForFunction(()=>blogState.ready);return p}
- const page=await pageIn(context);
+ let page=await pageIn(context);
  assert.equal(await page.locator('.entry').count(),1);assert.equal(await page.locator('#add').isVisible(),false);assert.equal(await page.locator('[data-action=edit]').count(),0);
- await page.locator('#account').click();await page.locator('#login-email').fill('owner@example.com');await page.locator('#login-form button').click();await page.waitForFunction(()=>document.querySelector('#account-message').textContent.includes('보냈습니다'));assert.equal(otp,1);await page.locator('#close-account').click();
- await page.evaluate(async s=>{const {error}=await blogClient.auth.setSession(s);if(error)throw error},session(A));await page.waitForFunction(()=>blogState.ready&&blogState.admin);
+ await page.locator('#account').click();await page.locator('#login-email').fill('owner@example.com');await page.locator('#send-code').click();await page.waitForFunction(()=>document.querySelector('#account-message').textContent.includes('보냈습니다'));assert.equal(otp,1);assert(await page.locator('#send-code').isDisabled());
+ // Request in browser A, enter the code in a clean browser B without a PKCE verifier or shared storage.
+ const requestContext=context,requestPage=page;
+ context=await browser.newContext({viewport:{width:1440,height:1000},acceptDownloads:true});await mock(context,origin);page=await pageIn(context);
+ assert.equal(await page.evaluate(()=>localStorage.getItem('papershelf-blog-session-code-verifier')),null);
+ await page.locator('#account').click();await page.locator('#login-email').fill('owner@example.com');await page.locator('#show-code').click();
+ await page.locator('#login-code').fill('000000');await page.locator('#verify-code').click();await page.waitForFunction(()=>document.querySelector('#account-message').textContent.includes('올바르지 않거나 만료'));
+ assert.equal(await page.evaluate(()=>blogState.user),null);assert(await page.locator('#verify-form').isVisible());
+ await page.locator('#login-code').fill('654321');await page.locator('#verify-code').click();await page.waitForFunction(()=>blogState.ready&&blogState.admin&&!document.querySelector('#account-dialog').open);
+ assert.equal(verifications,2);assert.equal(otp,1);assert.equal(await page.locator('#login-code').inputValue(),'');
+ assert.equal(await requestPage.evaluate(()=>blogState.user),null);
+ assert.equal(await page.evaluate(()=>Object.values(localStorage).some(value=>value==='654321')),false);
+ await requestContext.close();
+ await page.reload();await page.waitForFunction(()=>blogState.ready&&blogState.admin);
  assert.equal(await page.locator('.entry').count(),2);assert(await page.locator('#add').isVisible());
  // New posts default to private; uploaded images survive save and preview.
  await page.locator('#add').click();assert.equal(await page.locator('#publish-entry').isChecked(),false);await page.locator('[name=title]').fill('사진 초안');await page.locator('#photo-file').setInputFiles({name:'photo.png',mimeType:'image/png',buffer:png});await page.locator('#form button[type=submit]').click();await page.waitForFunction(()=>!blogState.busy&&!document.querySelector('#editor').open);
@@ -65,6 +78,6 @@ async function mock(context,origin){await context.route('https://shpiczkprbylbht
  await page.locator('#account').click();await page.locator('#logout').click();await page.waitForFunction(()=>blogState.ready&&!blogState.user);assert(!await page.evaluate(()=>localStorage.getItem('papershelf-blog-session')));
  await page.goto(origin+'/?post=public');await page.waitForFunction(()=>blogState.ready);assert(await page.locator('.entry[data-id=public]').evaluate(el=>el.open));assert((await page.title()).includes('두 번째 기기 저장'));
  await page.screenshot({path:'test-results/visitor-mobile.png',fullPage:true});assert.deepEqual(errors,[]);
- console.log('PASS browser: public/admin separation, email redirect, persistent login/logout, photos, draft default, 2-device conflict, draft backup/reload, original-preserving import, topic editing, permalink, mobile');
+ console.log('PASS browser: public/admin separation, cross-browser email OTP with wrong-code retry, persistent login/logout, photos, draft default, 2-device conflict, draft backup/reload, original-preserving import, topic editing, permalink, mobile');
  }finally{await browser.close();await new Promise(resolve=>server.close(resolve))}
 })().catch(e=>{console.error(e);process.exit(1)});

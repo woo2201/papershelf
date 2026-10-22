@@ -41,9 +41,48 @@ async function acceptSession(session){
     updateAccount();await load();
   }catch(e){if(epoch===bs.epoch){$('#load-error').hidden=false;$('#load-error').textContent=`글을 불러오지 못했습니다. ${e.message}`;$('#account-message').textContent=e.message}}
 }
-function updateAccount(){document.body.classList.toggle('blog-admin',bs.admin);$('#account').textContent=bs.user?'ACCOUNT':'LOGIN';$('#login-form').hidden=!!bs.user;$('#account-actions').hidden=!bs.user;$('#import-browser').hidden=!bs.admin;$('#account-email').textContent=bs.user?.email||'';if(bs.user&&!bs.admin)$('#account-message').textContent='이 계정에는 블로그 작성 권한이 없습니다.';else $('#account-message').textContent='';render()}
+function updateAccount(){renderLoginState();document.body.classList.toggle('blog-admin',bs.admin);$('#account').textContent=bs.user?'ACCOUNT':'LOGIN';$('#login-form').hidden=!!bs.user;$('#account-actions').hidden=!bs.user;$('#import-browser').hidden=!bs.admin;$('#account-email').textContent=bs.user?.email||'';if(bs.user&&!bs.admin)$('#account-message').textContent='이 계정에는 블로그 작성 권한이 없습니다.';else $('#account-message').textContent='';render()}
 $('#account').onclick=()=>$('#account-dialog').showModal();$('#close-account').onclick=()=>$('#account-dialog').close();
-$('#login-form').onsubmit=async e=>{e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;try{const redirect=new URL('./',location.href).href;const {error}=await client.auth.signInWithOtp({email:$('#login-email').value.trim(),options:{shouldCreateUser:true,emailRedirectTo:redirect}});if(error)throw error;$('#account-message').textContent='로그인 링크를 보냈습니다. 같은 브라우저에서 이메일의 링크를 열어 주세요.'}catch(e){$('#account-message').textContent=e.message}finally{button.disabled=false}};
+let loginSending=false,loginVerifying=false,codeVisible=false,codeSentTo='',resendAt=0;
+const loginEmail=()=>$('#login-email').value.trim();
+function renderLoginState(){
+  const loggedIn=!!bs.user,busy=loginSending||loginVerifying,remaining=Math.max(0,Math.ceil((resendAt-Date.now())/1000));
+  $('#verify-form').hidden=loggedIn||!codeVisible;
+  $('#login-email').disabled=busy;
+  $('#show-code').disabled=busy;
+  $('#send-code').disabled=busy||remaining>0;
+  $('#send-code').textContent=loginSending?'보내는 중…':remaining?`재전송 (${remaining}초)`:codeSentTo?'인증코드 다시 받기':'인증코드 받기';
+  $('#verify-code').disabled=busy;
+  $('#verify-code').textContent=loginVerifying?'인증 중…':'인증하고 로그인';
+  if(loggedIn){$('#login-code').value='';codeVisible=false;codeSentTo='';resendAt=0}
+}
+setInterval(renderLoginState,1000);
+$('#login-email').addEventListener('input',()=>{$('#login-code').value='';$('#account-message').textContent='';codeSentTo='';resendAt=0;renderLoginState()});
+$('#show-code').onclick=()=>{if(!$('#login-email').reportValidity())return;codeVisible=true;renderLoginState();$('#login-code').focus()};
+$('#login-form').onsubmit=async e=>{
+  e.preventDefault();if(loginSending||loginVerifying||Date.now()<resendAt)return;
+  const email=loginEmail();loginSending=true;renderLoginState();
+  try{
+    const {error}=await client.auth.signInWithOtp({email,options:{shouldCreateUser:true}});if(error)throw error;
+    codeSentTo=email;codeVisible=true;resendAt=Date.now()+60000;
+    $('#account-message').textContent=`${email}로 인증코드를 보냈습니다. 이메일을 다른 기기에서 확인해도 됩니다.`;
+  }catch(error){$('#account-message').textContent=error.status===429?'요청이 너무 많습니다. 잠시 뒤 다시 시도해 주세요.':error.message}
+  finally{loginSending=false;renderLoginState();if(codeVisible&&!bs.user)$('#login-code').focus()}
+};
+$('#verify-form').onsubmit=async e=>{
+  e.preventDefault();if(loginSending||loginVerifying)return;
+  if(!$('#login-email').reportValidity())return;
+  const email=loginEmail(),token=$('#login-code').value.trim();
+  if(!/^[0-9]{6,10}$/.test(token)){$('#account-message').textContent='이메일에 표시된 숫자 인증코드를 입력해 주세요.';return}
+  loginVerifying=true;renderLoginState();
+  try{
+    const {data,error}=await client.auth.verifyOtp({email,token,type:'email'});if(error)throw error;
+    if(!data.session)throw Error('로그인 정보를 받지 못했습니다. 새 인증코드를 받아 다시 시도해 주세요.');
+    await acceptSession(data.session);$('#login-code').value='';$('#account-dialog').close();
+  }catch(error){$('#account-message').textContent=error.status===429?'인증 시도가 너무 많습니다. 잠시 뒤 다시 시도해 주세요.':'코드가 올바르지 않거나 만료되었습니다. 이메일과 가장 최근에 받은 코드를 확인해 주세요.'}
+  finally{loginVerifying=false;renderLoginState()}
+};
+$('#account-dialog').addEventListener('close',()=>{$('#login-code').value=''});
 $('#logout').onclick=async()=>{if(bs.busy){$('#account-message').textContent='저장 완료 후 로그아웃해 주세요.';return}const {error}=await client.auth.signOut({scope:'local'});if(error){$('#account-message').textContent=error.message;return}await acceptSession(null);$('#account-dialog').close()};
 client.auth.onAuthStateChange((event,session)=>{if(event!=='TOKEN_REFRESHED')setTimeout(()=>acceptSession(session),0)});
 client.auth.getSession().then(({data,error})=>{if(error)failure(error,'#account-message');else acceptSession(data.session)});

@@ -41,12 +41,31 @@ async function acceptSession(session){
     updateAccount();await load();
   }catch(e){if(epoch===bs.epoch){$('#load-error').hidden=false;$('#load-error').textContent=`글을 불러오지 못했습니다. ${e.message}`;$('#account-message').textContent=e.message}}
 }
-function updateAccount(){document.body.classList.toggle('blog-admin',bs.admin);$('#account').textContent=bs.user?'ACCOUNT':'LOGIN';$('#login-form').hidden=!!bs.user;$('#account-actions').hidden=!bs.user;$('#import-browser').hidden=!bs.admin;$('#account-email').textContent=bs.user?.email||'';if(bs.user&&!bs.admin)$('#account-message').textContent='이 계정에는 블로그 작성 권한이 없습니다.';else $('#account-message').textContent='';render()}
+function updateAccount(){document.body.classList.toggle('blog-admin',bs.admin);$('#account').textContent=bs.user?'ACCOUNT':'LOGIN';$('#login-panel').hidden=!!bs.user;$('#account-actions').hidden=!bs.user;$('#import-browser').hidden=!bs.admin;$('#account-email').textContent=bs.user?.email||'';if(bs.user&&!bs.admin)$('#account-message').textContent='이 계정에는 블로그 작성 권한이 없습니다.';else $('#account-message').textContent='';render()}
 $('#account').onclick=()=>$('#account-dialog').showModal();$('#close-account').onclick=()=>$('#account-dialog').close();
-$('#login-form').onsubmit=async e=>{e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;try{const redirect=new URL('./',location.href).href;const {error}=await client.auth.signInWithOtp({email:$('#login-email').value.trim(),options:{shouldCreateUser:true,emailRedirectTo:redirect}});if(error)throw error;$('#account-message').textContent='로그인 링크를 보냈습니다. 같은 브라우저에서 이메일의 링크를 열어 주세요.'}catch(e){$('#account-message').textContent=e.message}finally{button.disabled=false}};
+let oauthStarting=false;
+$('#github-login').onclick=async()=>{
+  if(oauthStarting)return;oauthStarting=true;
+  const button=$('#github-login');button.disabled=true;button.textContent='GitHub로 이동 중…';$('#account-message').textContent='';
+  try{
+    const response=await fetch(`${client.supabaseUrl}/auth/v1/settings`,{headers:{apikey:client.supabaseKey}});
+    if(!response.ok)throw Error('로그인 서비스에 연결하지 못했습니다. 잠시 뒤 다시 시도해 주세요.');
+    const settings=await response.json();
+    if(settings.external?.github!==true)throw Error('GitHub 로그인 연결 설정이 아직 완료되지 않았습니다.');
+    const {data,error}=await client.auth.signInWithOAuth({provider:'github',options:{redirectTo:new URL('./',location.href).href,skipBrowserRedirect:true}});
+    if(error)throw error;if(!data.url)throw Error('GitHub 로그인 주소를 받지 못했습니다.');
+    location.assign(data.url);
+  }catch(error){$('#account-message').textContent=error.message}
+  finally{oauthStarting=false;button.disabled=false;button.textContent='GitHub로 로그인'}
+};
 $('#logout').onclick=async()=>{if(bs.busy){$('#account-message').textContent='저장 완료 후 로그아웃해 주세요.';return}const {error}=await client.auth.signOut({scope:'local'});if(error){$('#account-message').textContent=error.message;return}await acceptSession(null);$('#account-dialog').close()};
 client.auth.onAuthStateChange((event,session)=>{if(event!=='TOKEN_REFRESHED')setTimeout(()=>acceptSession(session),0)});
-client.auth.getSession().then(({data,error})=>{if(error)failure(error,'#account-message');else acceptSession(data.session)});
+const authCallbackUrl=new URL(location.href);
+const authCallbackError=authCallbackUrl.searchParams.get('error_description')||new URLSearchParams(authCallbackUrl.hash.slice(1)).get('error_description');
+client.auth.getSession().then(async({data,error})=>{
+  await acceptSession(error?null:data.session);
+  if(error||authCallbackError){$('#account-message').textContent='GitHub 로그인을 완료하지 못했습니다. 다시 시도해 주세요.';$('#account-dialog').showModal();for(const key of ['error','error_code','error_description'])authCallbackUrl.searchParams.delete(key);if(authCallbackUrl.hash.includes('error'))authCallbackUrl.hash='';history.replaceState(null,'',authCallbackUrl)}
+});
 
 async function uploadPhoto(id,blob,check){
   check();if(blob.size>=PHOTO_MAX||!['image/png','image/jpeg','image/webp','image/gif','image/avif'].includes(blob.type))throw Error('사진은 PNG, JPEG, WebP, GIF, AVIF 형식의 5MB 미만 파일이어야 합니다.');

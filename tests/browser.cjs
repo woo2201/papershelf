@@ -1,18 +1,19 @@
-const {chromium}=require('playwright');const assert=require('node:assert/strict');const fs=require('node:fs');const http=require('node:http');const path=require('node:path');
+const {chromium}=require('playwright');const crypto=require('node:crypto');const assert=require('node:assert/strict');const fs=require('node:fs');const http=require('node:http');const path=require('node:path');
 const A='11111111-1111-4111-8111-111111111111',B='22222222-2222-4222-8222-222222222222';
 const user=id=>({id,email:id===A?'owner@example.com':'visitor@example.com',aud:'authenticated',role:'authenticated',app_metadata:{},user_metadata:{},created_at:new Date().toISOString()});
 const session=id=>({access_token:['eyJhbGciOiJIUzI1NiJ9',Buffer.from(JSON.stringify({sub:id,exp:Math.floor(Date.now()/1000)+3600,role:'authenticated',aud:'authenticated'})).toString('base64url'),'mock'].join('.'),refresh_token:'refresh-'+id,token_type:'bearer',expires_in:3600,expires_at:Math.floor(Date.now()/1000)+3600,user:user(id)});
 const entry=(id,title)=>({id,title,date:'2026-10-21',kind:'note',topics:['Test'],body:'## Markdown\n**본문**',url:'',images:[]});
 const posts=new Map([['public',{id:'public',owner_id:A,entry:entry('public','공개 글'),status:'published',version:1}],['draft',{id:'draft',owner_id:A,entry:entry('draft','비공개 초안'),status:'draft',version:1}]]);
-let settings={owner_id:A,topics:['Test'],version:1},otp=0;const photos=new Map();const errors=[];
+let settings={owner_id:A,topics:['Test'],version:1},oauthCalls=0,pkceExchanges=0,githubEnabled=false,oauthChallenge='';const photos=new Map();const errors=[];
 const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==','base64');
 async function mock(context,origin){await context.route('https://shpiczkprbylbhtomynw.supabase.co/**',async route=>{
  const req=route.request(),url=new URL(req.url());let uid;try{uid=JSON.parse(Buffer.from((req.headers().authorization||'').split('.')[1],'base64url')).sub}catch{}
  const json=(data,status=200)=>route.fulfill({status,contentType:'application/json',body:JSON.stringify(data)});
  if(req.method()==='OPTIONS')return route.fulfill({status:204,headers:{'access-control-allow-origin':'*','access-control-allow-headers':'*'}});
- if(url.pathname.endsWith('/auth/v1/otp')){otp++;assert.equal(url.searchParams.get('redirect_to'),origin+'/');assert.equal(JSON.parse(req.postData()).create_user,true);return json({})}
+ if(url.pathname.endsWith('/auth/v1/settings'))return json({external:{github:githubEnabled},mailer_autoconfirm:false});
+ if(url.pathname.endsWith('/auth/v1/authorize')){oauthCalls++;assert.equal(url.searchParams.get('provider'),'github');assert.equal(url.searchParams.get('redirect_to'),origin+'/');assert.equal(url.searchParams.get('code_challenge_method'),'s256');oauthChallenge=url.searchParams.get('code_challenge');assert(oauthChallenge);return route.fulfill({status:302,headers:{location:origin+'/?code=github-test-code'}})}
  if(url.pathname.endsWith('/auth/v1/user'))return json(user(uid));
- if(url.pathname.endsWith('/auth/v1/token'))return json(session(JSON.parse(req.postData()).refresh_token.slice(8)));
+ if(url.pathname.endsWith('/auth/v1/token')){const body=JSON.parse(req.postData());if(url.searchParams.get('grant_type')==='pkce'){pkceExchanges++;assert.equal(body.auth_code,'github-test-code');assert.equal(crypto.createHash('sha256').update(body.code_verifier).digest('base64url'),oauthChallenge);return json(session(A))}return json(session(body.refresh_token.slice(8)))}
  if(url.pathname.endsWith('/auth/v1/logout'))return route.fulfill({status:204});
  if(url.pathname==='/rest/v1/papershelf_blog_settings')return json(uid===A?[settings]:[]);
  if(url.pathname==='/rest/v1/papershelf_posts')return json([...posts.values()].filter(p=>uid===A||p.status==='published'));
@@ -36,8 +37,9 @@ async function mock(context,origin){await context.route('https://shpiczkprbylbht
  async function pageIn(ctx){const p=await ctx.newPage();p.on('pageerror',e=>errors.push(e.message));p.on('dialog',d=>d.accept());await p.goto(origin);await p.waitForFunction(()=>blogState.ready);return p}
  const page=await pageIn(context);
  assert.equal(await page.locator('.entry').count(),1);assert.equal(await page.locator('#add').isVisible(),false);assert.equal(await page.locator('[data-action=edit]').count(),0);
- await page.locator('#account').click();await page.locator('#login-email').fill('owner@example.com');await page.locator('#login-form button').click();await page.waitForFunction(()=>document.querySelector('#account-message').textContent.includes('보냈습니다'));assert.equal(otp,1);await page.locator('#close-account').click();
- await page.evaluate(async s=>{const {error}=await blogClient.auth.setSession(s);if(error)throw error},session(A));await page.waitForFunction(()=>blogState.ready&&blogState.admin);
+ await page.locator('#account').click();await page.locator('#github-login').click();await page.waitForFunction(()=>document.querySelector('#account-message').textContent.includes('아직 완료되지 않았습니다'));assert.equal(oauthCalls,0);assert.equal(await page.locator('#github-login').isEnabled(),true);
+ githubEnabled=true;await page.locator('#github-login').click();await page.waitForFunction(()=>window.blogState?.ready&&window.blogState?.admin);
+ assert.equal(oauthCalls,1);assert.equal(pkceExchanges,1);assert.equal(new URL(page.url()).searchParams.get('code'),null);
  assert.equal(await page.locator('.entry').count(),2);assert(await page.locator('#add').isVisible());
  // New posts default to private; uploaded images survive save and preview.
  await page.locator('#add').click();assert.equal(await page.locator('#publish-entry').isChecked(),false);await page.locator('[name=title]').fill('사진 초안');await page.locator('#photo-file').setInputFiles({name:'photo.png',mimeType:'image/png',buffer:png});await page.locator('#form button[type=submit]').click();await page.waitForFunction(()=>!blogState.busy&&!document.querySelector('#editor').open);
@@ -65,6 +67,8 @@ async function mock(context,origin){await context.route('https://shpiczkprbylbht
  await page.locator('#account').click();await page.locator('#logout').click();await page.waitForFunction(()=>blogState.ready&&!blogState.user);assert(!await page.evaluate(()=>localStorage.getItem('papershelf-blog-session')));
  await page.goto(origin+'/?post=public');await page.waitForFunction(()=>blogState.ready);assert(await page.locator('.entry[data-id=public]').evaluate(el=>el.open));assert((await page.title()).includes('두 번째 기기 저장'));
  await page.screenshot({path:'test-results/visitor-mobile.png',fullPage:true});assert.deepEqual(errors,[]);
- console.log('PASS browser: public/admin separation, email redirect, persistent login/logout, photos, draft default, 2-device conflict, draft backup/reload, original-preserving import, topic editing, permalink, mobile');
+ // A rejected OAuth consent returns a useful retry screen without storing an authenticated session.
+ const deniedContext=await browser.newContext();await mock(deniedContext,origin);const denied=await deniedContext.newPage();denied.on('pageerror',e=>errors.push(e.message));await denied.goto(origin+'/?error=access_denied&error_description=Denied');await denied.waitForFunction(()=>document.querySelector('#account-dialog').open);assert((await denied.locator('#account-message').textContent()).includes('완료하지 못했습니다'));assert.equal(await denied.evaluate(()=>blogState.user),null);assert.equal(new URL(denied.url()).searchParams.get('error'),null);await deniedContext.close();assert.deepEqual(errors,[]);
+ console.log('PASS browser: public/admin separation, GitHub OAuth redirect/PKCE exchange and disabled-provider handling, persistent login/logout, photos, draft default, 2-device conflict, draft backup/reload, original-preserving import, topic editing, permalink, mobile');
  }finally{await browser.close();await new Promise(resolve=>server.close(resolve))}
 })().catch(e=>{console.error(e);process.exit(1)});

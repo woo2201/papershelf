@@ -18,3 +18,50 @@ nav{min-height:48px;padding-bottom:0}.hero{margin-top:28px;margin-bottom:42px}
 #editor .write-tabs button[role=tab]{background:transparent;color:#8fa9a1;font:10px Galmuri,monospace;padding:6px 9px;border-radius:4px}#editor .write-tabs button[aria-selected=true]{background:#2a4140;color:#e1eee7}
 
 nav #account,body:not(.blog-admin) nav #account{margin-left:auto}.editor-message:empty{display:none}#editor-message{padding:0;font-size:12px;line-height:1.8;white-space:pre-wrap;color:#e7c5b5}
+
+.boot-log {
+  min-width: 0;
+  margin-top: 20px;
+  padding-top: 12px;
+  border-top: 1px dashed #829d9645;
+  color: var(--muted);
+  font: 10px/1.5 GalmuriMono9, monospace;
+}
+
+.boot-log-screen {
+  height: 24em;
+  margin: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font: inherit;
+}
+
+.boot-log-toggle {
+  display: block;
+  margin: 6px 0 0 auto;
+  padding: 0;
+  color: #a9c6b6;
+  background: none;
+  font: inherit;
+}
+
+.boot-log-summary {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.boot-log-summary li {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.boot-log-status {
+  flex-shrink: 0;
+  color: #a9c6b6;
+  white-space: nowrap;
+}

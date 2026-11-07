@@ -18,3 +18,45 @@ nav{min-height:48px;padding-bottom:0}.hero{margin-top:28px;margin-bottom:42px}
 #editor .write-tabs button[role=tab]{background:transparent;color:#8fa9a1;font:10px Galmuri,monospace;padding:6px 9px;border-radius:4px}#editor .write-tabs button[aria-selected=true]{background:#2a4140;color:#e1eee7}
 
 nav #account,body:not(.blog-admin) nav #account{margin-left:auto}.editor-message:empty{display:none}#editor-message{padding:0;font-size:12px;line-height:1.8;white-space:pre-wrap;color:#e7c5b5}
+
+.boot-log {
+  display: grid;
+  gap: 6px;
+  margin: 20px 0 0;
+  padding: 12px 0 0;
+  border-top: 1px dashed #829d9645;
+  list-style: none;
+  color: var(--muted);
+  font: 10px/1.5 GalmuriMono9, monospace;
+}
+
+.boot-log li {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.boot-log-status {
+  flex-shrink: 0;
+  color: #a9c6b6;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .boot-log li {
+    animation: boot-log-reveal 160ms ease-out both;
+  }
+
+  .boot-log li:nth-child(2) {
+    animation-delay: 220ms;
+  }
+
+  .boot-log li:nth-child(3) {
+    animation-delay: 440ms;
+  }
+}
+
+@keyframes boot-log-reveal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

@@ -20,17 +20,41 @@ nav{min-height:48px;padding-bottom:0}.hero{margin-top:28px;margin-bottom:42px}
 nav #account,body:not(.blog-admin) nav #account{margin-left:auto}.editor-message:empty{display:none}#editor-message{padding:0;font-size:12px;line-height:1.8;white-space:pre-wrap;color:#e7c5b5}
 
 .boot-log {
-  display: grid;
-  gap: 6px;
-  margin: 20px 0 0;
-  padding: 12px 0 0;
+  min-width: 0;
+  margin-top: 20px;
+  padding-top: 12px;
   border-top: 1px dashed #829d9645;
-  list-style: none;
   color: var(--muted);
   font: 10px/1.5 GalmuriMono9, monospace;
 }
 
-.boot-log li {
+.boot-log-screen {
+  height: 24em;
+  margin: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font: inherit;
+}
+
+.boot-log-toggle {
+  display: block;
+  margin: 6px 0 0 auto;
+  padding: 0;
+  color: #a9c6b6;
+  background: none;
+  font: inherit;
+}
+
+.boot-log-summary {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.boot-log-summary li {
   display: flex;
   align-items: baseline;
   gap: 6px;
@@ -40,23 +64,4 @@ nav #account,body:not(.blog-admin) nav #account{margin-left:auto}.editor-message
   flex-shrink: 0;
   color: #a9c6b6;
   white-space: nowrap;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .boot-log li {
-    animation: boot-log-reveal 160ms ease-out both;
-  }
-
-  .boot-log li:nth-child(2) {
-    animation-delay: 220ms;
-  }
-
-  .boot-log li:nth-child(3) {
-    animation-delay: 440ms;
-  }
-}
-
-@keyframes boot-log-reveal {
-  from { opacity: 0; }
-  to { opacity: 1; }
 }
